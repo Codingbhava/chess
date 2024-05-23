@@ -2,7 +2,10 @@ import 'package:chess/components/piece.dart';
 import 'package:chess/components/square.dart';
 import 'package:chess/helper/methods.dart';
 import 'package:chess/utils/app_styles.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'dart:io' show Platform;
+import 'package:audioplayers/audioplayers.dart';
 
 class GameBoard extends StatefulWidget {
   const GameBoard({super.key});
@@ -20,6 +23,11 @@ class _GameBoardState extends State<GameBoard> {
   Player currentPlayer = Player.white; // Start with white player
   List<ChessPiece> whiteKilledPieces = [];
   List<ChessPiece> blackKilledPieces = [];
+  bool mute = true;
+  AudioPlayer player = AudioPlayer();
+  List<int> whiteKingPosition = [7, 4];
+  List<int> blackKingPosition = [0, 4];
+  bool checkStatus = false;
 
   @override
   void initState() {
@@ -75,15 +83,7 @@ class _GameBoardState extends State<GameBoard> {
         selectedPiece = board[row][col];
         selectedRow = row;
         selectedCol = col;
-        // Check if the selected piece is a king and if it is killed
-        if (selectedPiece?.type == ChessPieceTypes.king &&
-            ((currentPlayer == Player.white &&
-                    blackKilledPieces.contains(selectedPiece!)) ||
-                (currentPlayer == Player.black &&
-                    whiteKilledPieces.contains(selectedPiece!)))) {
-          return; // Don't calculate and show valid moves
-        }
-        validMoves = calculateRawValidMoves(
+        validMoves = calculateRealValidMoves(
             selectedRow, selectedCol, selectedPiece, board);
       } else {
         if (isValidMove(row, col)) {
@@ -101,8 +101,21 @@ class _GameBoardState extends State<GameBoard> {
             _showPromotionDialog(row, col);
           } else {
             // Move the selected piece to the new position
+            if (!mute) {
+              playSound(player);
+            }
             board[row][col] = selectedPiece;
             board[selectedRow][selectedCol] = null;
+
+            // Update king position if moved
+            if (selectedPiece!.type == ChessPieceTypes.king) {
+              if (selectedPiece!.isWhite) {
+                whiteKingPosition = [row, col];
+              } else {
+                blackKingPosition = [row, col];
+              }
+            }
+
             // Deselect the piece after moving
             selectedPiece = null;
             selectedRow = -1;
@@ -114,8 +127,99 @@ class _GameBoardState extends State<GameBoard> {
           }
         }
       }
+
+      if (isKingInCheck(currentPlayer == Player.white)) {
+        checkStatus = true;
+      } else {
+        checkStatus = false;
+      }
     });
     checkForWinner();
+  }
+
+  List<List<int>> calculateRealValidMoves(
+      int row, int col, ChessPiece? piece, List<List<ChessPiece?>> board) {
+    List<List<int>> candidateMoves =
+        calculateRawValidMoves(row, col, piece, board);
+    List<List<int>> realValidMoves = [];
+    for (var move in candidateMoves) {
+      int endRow = move[0];
+      int endCol = move[1];
+      if (checkFutureMoveIsSafe(piece!, row, col, endRow, endCol)) {
+        realValidMoves.add(move);
+      }
+    }
+    return realValidMoves;
+  }
+
+  bool checkFutureMoveIsSafe(
+      ChessPiece piece, int startRow, int startCol, int endRow, int endCol) {
+    ChessPiece? originalDestinationPiece = board[endRow][endCol];
+    List<int>? originalKingPosition;
+    if (piece.type == ChessPieceTypes.king) {
+      originalKingPosition =
+          piece.isWhite ? whiteKingPosition : blackKingPosition;
+      if (piece.isWhite) {
+        whiteKingPosition = [endRow, endCol];
+      } else {
+        blackKingPosition = [endRow, endCol];
+      }
+    }
+    board[endRow][endCol] = piece;
+    board[startRow][startCol] = null;
+    bool kingInCheck = isKingInCheck(piece.isWhite);
+    board[startRow][startCol] = piece;
+    board[endRow][endCol] = originalDestinationPiece;
+    if (piece.type == ChessPieceTypes.king) {
+      if (piece.isWhite) {
+        whiteKingPosition = originalKingPosition!;
+      } else {
+        blackKingPosition = originalKingPosition!;
+      }
+    }
+    return !kingInCheck;
+  }
+
+  bool isKingInCheck(bool isWhiteKing) {
+    List<int> kingPosition =
+        isWhiteKing ? whiteKingPosition : blackKingPosition;
+    for (int i = 0; i < 8; i++) {
+      for (int j = 0; j < 8; j++) {
+        if (board[i][j] == null || board[i][j]!.isWhite == isWhiteKing) {
+          continue;
+        }
+        List<List<int>> pieceValidMoves =
+            calculateRawValidMoves(i, j, board[i][j], board);
+        for (var move in pieceValidMoves) {
+          if (move[0] == kingPosition[0] && move[1] == kingPosition[1]) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  void checkForWinner() {
+    if (isCheckmate(currentPlayer == Player.white)) {
+      showWinnerDialog(currentPlayer == Player.white ? "Black" : "White");
+    }
+  }
+
+  bool isCheckmate(bool isWhiteKing) {
+    // Iterate through all pieces of the current player
+    for (int i = 0; i < 8; i++) {
+      for (int j = 0; j < 8; j++) {
+        if (board[i][j] != null && board[i][j]!.isWhite == isWhiteKing) {
+          List<List<int>> validMoves =
+              calculateRealValidMoves(i, j, board[i][j], board);
+          if (validMoves.isNotEmpty) {
+            return false; // If any piece has a valid move, it's not checkmate
+          }
+        }
+      }
+    }
+    return true; // No valid moves for any piece, it's checkmate
   }
 
   void _showPromotionDialog(int row, int col) {
@@ -210,58 +314,46 @@ class _GameBoardState extends State<GameBoard> {
     return validMoves.any((move) => move[0] == row && move[1] == col);
   }
 
-  void checkForWinner() {
-    bool whiteKingExists = false;
-    bool blackKingExists = false;
-
-    // Check if both kings are still on the board
-    for (int row = 0; row < 8; row++) {
-      for (int col = 0; col < 8; col++) {
-        if (board[row][col]?.type == ChessPieceTypes.king) {
-          if (board[row][col]?.isWhite == true) {
-            whiteKingExists = true;
-          } else {
-            blackKingExists = true;
-          }
-        }
-      }
-    }
-
-    if (!whiteKingExists) {
-      showWinnerDialog("Black");
-    } else if (!blackKingExists) {
-      showWinnerDialog("White");
-    }
-  }
-void showWinnerDialog(String winner) {
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        contentTextStyle: TextStyle(color: AppTheme.textColor),
-        backgroundColor: Colors.black,
-        title: Text(
-          "Game Over",
-          style: TextStyle(color: AppTheme.textColor),
-        ),
-        content: Text("$winner wins!"),
-        actions: [
-          TextButton(
-            style: ButtonStyle(
-                backgroundColor: MaterialStatePropertyAll(AppTheme.panelColor)),
-            onPressed: () {
-              Navigator.of(context).pop(); // Close the dialog
-              resetGame();
-            },
-            child:
-                Text("Reset Game", style: TextStyle(color: AppTheme.textColor)),
+  void showWinnerDialog(String winner) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          contentTextStyle: TextStyle(color: AppTheme.textColor),
+          backgroundColor: Colors.black,
+          title: Text(
+            "Game Over",
+            style: TextStyle(color: AppTheme.textColor),
           ),
-        ],
-      );
-    },
-  );
-}
+          content: Text("$winner wins!"),
+          actions: [
+            TextButton(
+              style: ButtonStyle(
+                  backgroundColor:
+                      MaterialStatePropertyAll(AppTheme.panelColor)),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+                resetGame();
+              },
+              child: Text("Reset Game",
+                  style: TextStyle(color: AppTheme.textColor)),
+            ),
+            TextButton(
+              style: ButtonStyle(
+                  backgroundColor:
+                      MaterialStatePropertyAll(AppTheme.panelColor)),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+              },
+              child: Text("ok", style: TextStyle(color: AppTheme.textColor)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void promotePawn(int row, int col, ChessPieceTypes type) {
     setState(() {
       board[row][col] =
@@ -298,19 +390,13 @@ void showWinnerDialog(String winner) {
             .panelColor; // Define background color based on current player
     Color backgroundColorbutton =
         currentPlayer == Player.white ? AppTheme.panelColor : AppTheme.white;
+
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-          backgroundColor: backgroundColorbutton,
-          onPressed: resetGame,
-          child: Icon(
-            Icons.restart_alt,
-            color: backgroundColor,
-          )),
       backgroundColor: backgroundColor, // Set background color
       body: Stack(
         children: [
           Positioned(
-            top: 20,
+            top: 30,
             left: 20,
             child: Text(
               currentPlayer == Player.white ? 'White Turn' : 'Black Turn',
@@ -322,51 +408,158 @@ void showWinnerDialog(String winner) {
               ),
             ),
           ),
-          Center(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final squareSize = calculateSquareSize(context);
-                final boardSize = squareSize * 8;
-
-                return Container(
-                  padding: EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.brown[700], // Wood color
-                    border: Border.all(
-                      color: Colors.brown[800]!, // Border color
-                      width: 8.0, // Border width
-                    ),
-                  ),
-                  width: boardSize,
-                  height: boardSize,
-                  child: GridView.builder(
-                    itemCount: 8 * 8,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 8,
-                      childAspectRatio: 1,
-                    ),
-                    itemBuilder: (context, index) {
-                      int row = index ~/ 8;
-                      int col = index % 8;
-                      bool isSelected =
-                          selectedRow == row && selectedCol == col;
-                      bool isValidMove = validMoves
-                          .any((move) => move[0] == row && move[1] == col);
-                      return Square(
-                        onTap: () => pieceSelected(row, col),
-                        isWhite: isWhite(index),
-                        piece: board[row][col],
-                        size: squareSize,
-                        isValidMove: isValidMove,
-                        isSelected: isSelected,
-                      );
-                    },
-                  ),
-                );
-              },
+          Positioned(
+            top: 30,
+            right: 20,
+            child: Text(
+              checkStatus ? 'Check Mate' : '',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color:
+                    currentPlayer == Player.white ? Colors.black : Colors.white,
+              ),
             ),
           ),
+          Positioned(
+            bottom: 20,
+            left: 20,
+            child: IconButton(
+              onPressed: resetGame,
+              style: ButtonStyle(
+                backgroundColor:
+                    MaterialStatePropertyAll(backgroundColorbutton),
+              ),
+              icon: Icon(
+                Icons.restart_alt,
+                color: backgroundColor,
+              ),
+            ),
+          ),
+          // ListView.builder(
+          //   itemCount: whiteKilledPieces.length,
+          //   itemBuilder: (context, index) => DeadPiece(
+          //     piece: whiteKilledPieces[index],
+          //     size: calculateSquareSize(context),
+          //   ),
+          //   shrinkWrap: true,
+          //   scrollDirection: Axis.vertical,
+          // ),
+          Positioned(
+            bottom: 20,
+            right: 20,
+            child: IconButton(
+              onPressed: () {
+                setState(() {
+                  mute = !mute;
+                });
+              },
+              style: ButtonStyle(
+                backgroundColor:
+                    MaterialStatePropertyAll(backgroundColorbutton),
+              ),
+              icon: mute
+                  ? Icon(
+                      Icons.volume_off_outlined,
+                      color: backgroundColor,
+                    )
+                  : Icon(
+                      Icons.volume_up_outlined,
+                      color: backgroundColor,
+                    ),
+            ),
+          ),
+          if (!kIsWeb && Platform.isAndroid)
+            Center(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  double boardSize =
+                      constraints.maxWidth < constraints.maxHeight
+                          ? constraints.maxWidth
+                          : constraints.maxHeight;
+
+                  // Adjust the board size to fit within the screen with some padding
+                  boardSize -= 10; // Subtract padding for better fit
+
+                  final squareSize = boardSize / 8;
+
+                  return Container(
+                    width: boardSize - 56,
+                    height: boardSize - 16,
+                    child: GridView.builder(
+                      itemCount: 8 * 8,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 8,
+                        childAspectRatio: 1,
+                      ),
+                      itemBuilder: (context, index) {
+                        int row = index ~/ 8;
+                        int col = index % 8;
+                        bool isSelected =
+                            selectedRow == row && selectedCol == col;
+                        bool isValidMove = validMoves
+                            .any((move) => move[0] == row && move[1] == col);
+                        return Square(
+                          onTap: () => pieceSelected(row, col),
+                          isWhite: isWhite(index),
+                          piece: board[row][col],
+                          size: squareSize,
+                          isValidMove: isValidMove,
+                          isSelected: isSelected,
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          if (!Platform.isAndroid)
+            Center(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final squareSize = calculateSquareSize(context);
+                  final boardSize = squareSize * 8;
+
+                  return Container(
+                    padding: EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.brown[700], // Wood color
+                      border: Border.all(
+                        color: Colors.brown[800]!, // Border color
+                        width: 8.0, // Border width
+                      ),
+                    ),
+                    width: boardSize,
+                    height: boardSize,
+                    child: GridView.builder(
+                      itemCount: 8 * 8,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 8,
+                        childAspectRatio: 1,
+                      ),
+                      itemBuilder: (context, index) {
+                        int row = index ~/ 8;
+                        int col = index % 8;
+                        bool isSelected =
+                            selectedRow == row && selectedCol == col;
+                        bool isValidMove = validMoves
+                            .any((move) => move[0] == row && move[1] == col);
+                        return Square(
+                          onTap: () => pieceSelected(row, col),
+                          isWhite: isWhite(index),
+                          piece: board[row][col],
+                          size: squareSize,
+                          isValidMove: isValidMove,
+                          isSelected: isSelected,
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );

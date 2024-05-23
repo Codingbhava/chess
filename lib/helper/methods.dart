@@ -1,5 +1,6 @@
 import 'package:chess/components/piece.dart';
 import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 bool isWhite(int index) {
   int row = index ~/ 8;
@@ -148,4 +149,8 @@ List<List<int>> calculateRawValidMoves(
     default:
   }
   return candidateMoves;
+}
+
+Future<void> playSound(AudioPlayer player) async {
+  await player.play(AssetSource("sound.mp3"));
 }
