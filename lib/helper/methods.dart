@@ -151,6 +151,18 @@ List<List<int>> calculateRawValidMoves(
   return candidateMoves;
 }
 
-Future<void> playSound(AudioPlayer player) async {
-  await player.play(AssetSource("sound.mp3"));
+Future<void> playMove(AudioPlayer player) async {
+  await player.play(AssetSource("1.mp3"));
+}
+
+Future<void> playPromote(AudioPlayer player) async {
+  await player.play(AssetSource("3.mp3"));
+}
+
+Future<void> playWins(AudioPlayer player) async {
+  await player.play(AssetSource("4.mp3"));
+}
+
+Future<void> playMusic(AudioPlayer player) async {
+  await player.play(AssetSource("music.m4a"));
 }

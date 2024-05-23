@@ -102,7 +102,7 @@ class _GameBoardState extends State<GameBoard> {
           } else {
             // Move the selected piece to the new position
             if (!mute) {
-              playSound(player);
+              playMove(player);
             }
             board[row][col] = selectedPiece;
             board[selectedRow][selectedCol] = null;
@@ -202,6 +202,9 @@ class _GameBoardState extends State<GameBoard> {
 
   void checkForWinner() {
     if (isCheckmate(currentPlayer == Player.white)) {
+      if (!mute) {
+        playWins(player);
+      }
       showWinnerDialog(currentPlayer == Player.white ? "Black" : "White");
     }
   }
@@ -358,6 +361,9 @@ class _GameBoardState extends State<GameBoard> {
     setState(() {
       board[row][col] =
           ChessPiece(type: type, isWhite: currentPlayer == Player.white);
+      if (!mute) {
+        playPromote(player);
+      }
       board[selectedRow][selectedCol] = null;
       selectedPiece = null;
       selectedRow = -1;
@@ -379,6 +385,9 @@ class _GameBoardState extends State<GameBoard> {
       currentPlayer = Player.white;
       whiteKilledPieces.clear();
       blackKilledPieces.clear();
+      whiteKingPosition = [7, 4];
+      blackKingPosition = [0, 4];
+      checkStatus = false;
     });
   }
 
