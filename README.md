@@ -4,7 +4,7 @@
 
 # Chess Game
 
-A two-player offline chess game implemented using Flutter and Dart, specifically designed for desktop applications. This application allows users to play a full game of chess with a standard chessboard and all the standard rules, including pawn promotion, check, and checkmate detection.
+A two-player offline chess game implemented using Flutter and Dart, specifically designed for desktop and android applications. This application allows users to play a full game of chess with a standard chessboard and all the standard rules, including pawn promotion, check, and checkmate detection.
 
 ## Features
 
