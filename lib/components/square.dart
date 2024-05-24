@@ -23,15 +23,13 @@ class Square extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Color squareColor;
-    if (isSelected) {
-      squareColor = AppTheme.selectedColor;
-    } else if (isValidMove) {
-      squareColor = AppTheme.selectedValidColor;
-    } else {
-      squareColor = isWhite ? AppTheme.white : AppTheme.black;
-    }
-
+    Color squareColor = isSelected
+        ? AppTheme.selectedColor
+        : isValidMove
+            ? AppTheme.selectedValidColor
+            : isWhite
+                ? AppTheme.white
+                : AppTheme.black;
     return GestureDetector(
       onTap: onTap,
       child: Container(
